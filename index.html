@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>画像解析 - 黒ピクセル割合</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .upload-section {
+            margin: 20px 0;
+            text-align: center;
+        }
+        input[type="file"] {
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            display: none;
+        }
+        #result.show {
+            display: block;
+        }
+        .percentage {
+            font-size: 48px;
+            font-weight: bold;
+            color: #2196F3;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .details {
+            font-size: 14px;
+            color: #666;
+            margin-top: 10px;
+        }
+        #preview {
+            max-width: 100%;
+            max-height: 400px;
+            margin: 20px auto;
+            display: block;
+            border: 1px solid #ddd;
+        }
+        #canvas {
+            display: none;
+        }
+        #gridCanvas {
+            max-width: 100%;
+            margin: 20px auto;
+            display: none;
+            border: 1px solid #ddd;
+        }
+        .grid-result {
+            margin-top: 20px;
+            padding: 20px;
+            background-color: #e3f2fd;
+            border-radius: 4px;
+            border-left: 4px solid #2196F3;
+        }
+        .grid-count {
+            font-size: 36px;
+            font-weight: bold;
+            color: #1976D2;
+            text-align: center;
+            margin: 10px 0;
+        }
+        #downloadBtn {
+            display: none;
+            margin: 20px auto;
+            padding: 12px 24px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            text-align: center;
+        }
+        #downloadBtn:hover {
+            background-color: #45a049;
+        }
+        .button-container {
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>画像解析 - 黒ピクセル割合</h1>
+
+        <div class="upload-section">
+            <div style="margin-bottom: 15px;">
+                <label>縦のマス数: <input type="number" id="rowsInput" value="26" min="1" max="100" style="width: 80px; padding: 5px;"></label>
+                <label style="margin-left: 15px;">横のマス数: <input type="number" id="colsInput" value="40" min="1" max="100" style="width: 80px; padding: 5px;"></label>
+            </div>
+            <input type="file" id="imageInput" accept="image/*">
+        </div>
+
+        <img id="preview" style="display:none;">
+        <canvas id="canvas"></canvas>
+        <canvas id="gridCanvas"></canvas>
+
+        <div id="result">
+            <div class="percentage" id="percentage"></div>
+            <div class="details">
+                <p>総ピクセル数: <strong id="totalPixels"></strong></p>
+                <p>黒ピクセル数: <strong id="blackPixels"></strong></p>
+                <p>画像サイズ: <strong id="imageSize"></strong></p>
+            </div>
+
+            <div class="grid-result">
+                <h3 style="text-align: center; color: #1976D2;" id="gridTitle">マス目解析</h3>
+                <div class="grid-count" id="gridCount"></div>
+                <div class="details">
+                    <p>総マス数: <strong id="totalCells"></strong></p>
+                    <p>黒80%以上のマス数: <strong id="blackCellCount"></strong></p>
+                    <p>各マスのサイズ: <strong id="cellSize"></strong></p>
+                </div>
+                <div class="button-container">
+                    <button id="downloadBtn">テキストファイルをダウンロード</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const imageInput = document.getElementById('imageInput');
+        const rowsInput = document.getElementById('rowsInput');
+        const colsInput = document.getElementById('colsInput');
+        const preview = document.getElementById('preview');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const gridCanvas = document.getElementById('gridCanvas');
+        const gridCtx = gridCanvas.getContext('2d');
+        const result = document.getElementById('result');
+
+        let gridData = []; // グリッドデータを保存
+
+        function isBlackPixel(r, g, b) {
+            return r < 50 && g < 50 && b < 50;
+        }
+
+        function downloadTextFile() {
+            const gridRows = gridData.length;
+            const gridCols = gridData[0].length;
+            let textContent = '';
+
+            // ヘッダー情報を追加
+            textContent += 'pzprv3\n';
+            textContent += 'nurikabe\n';
+            textContent += gridRows + '\n';
+            textContent += gridCols + '\n';
+
+            // グリッドデータを追加
+            for (let row = 0; row < gridRows; row++) {
+                for (let col = 0; col < gridCols; col++) {
+                    textContent += gridData[row][col] ? '#' : '.';
+                    if (col < gridCols - 1) {
+                        textContent += ' ';
+                    }
+                }
+                textContent += '\n';
+            }
+
+            const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'grid_result.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        document.getElementById('downloadBtn').addEventListener('click', downloadTextFile);
+
+        imageInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // ユーザー入力のマス数を取得
+            const GRID_ROWS = parseInt(rowsInput.value) || 26;
+            const GRID_COLS = parseInt(colsInput.value) || 40;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    // プレビュー表示
+                    preview.src = img.src;
+                    preview.style.display = 'block';
+
+                    // キャンバスに画像を描画
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+
+                    // ピクセルデータを取得
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const pixels = imageData.data;
+
+                    // 黒ピクセルをカウント（全体）
+                    let blackCount = 0;
+                    const totalPixels = canvas.width * canvas.height;
+
+                    for (let i = 0; i < pixels.length; i += 4) {
+                        const r = pixels[i];
+                        const g = pixels[i + 1];
+                        const b = pixels[i + 2];
+
+                        if (isBlackPixel(r, g, b)) {
+                            blackCount++;
+                        }
+                    }
+
+                    // 全体の割合を計算
+                    const percentage = (blackCount / totalPixels * 100).toFixed(2);
+
+                    // グリッド解析
+                    const cellWidth = canvas.width / GRID_COLS;
+                    const cellHeight = canvas.height / GRID_ROWS;
+                    let blackCellCount = 0;
+
+                    // グリッドデータを初期化
+                    gridData = [];
+                    for (let i = 0; i < GRID_ROWS; i++) {
+                        gridData[i] = [];
+                    }
+
+                    // グリッド描画用のキャンバスを準備
+                    gridCanvas.width = canvas.width;
+                    gridCanvas.height = canvas.height;
+                    gridCanvas.style.display = 'block';
+                    gridCtx.drawImage(img, 0, 0);
+
+                    // 各マスを解析
+                    for (let row = 0; row < GRID_ROWS; row++) {
+                        for (let col = 0; col < GRID_COLS; col++) {
+                            const startX = Math.floor(col * cellWidth);
+                            const startY = Math.floor(row * cellHeight);
+                            const endX = Math.floor((col + 1) * cellWidth);
+                            const endY = Math.floor((row + 1) * cellHeight);
+
+                            let cellBlackCount = 0;
+                            let cellTotalCount = 0;
+
+                            // このマス内のピクセルをチェック
+                            for (let y = startY; y < endY; y++) {
+                                for (let x = startX; x < endX; x++) {
+                                    const pixelIndex = (y * canvas.width + x) * 4;
+                                    const r = pixels[pixelIndex];
+                                    const g = pixels[pixelIndex + 1];
+                                    const b = pixels[pixelIndex + 2];
+
+                                    cellTotalCount++;
+                                    if (isBlackPixel(r, g, b)) {
+                                        cellBlackCount++;
+                                    }
+                                }
+                            }
+
+                            // このマスの黒の割合を計算
+                            const cellBlackPercentage = (cellBlackCount / cellTotalCount) * 100;
+
+                            // 80%以上かどうかを記録
+                            const isBlackCell = cellBlackPercentage >= 80;
+                            gridData[row][col] = isBlackCell;
+
+                            // 80%以上なら赤枠で囲む
+                            if (isBlackCell) {
+                                blackCellCount++;
+                                gridCtx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
+                                gridCtx.lineWidth = 2;
+                                gridCtx.strokeRect(startX, startY, endX - startX, endY - startY);
+                            }
+                        }
+                    }
+
+                    // グリッド線を描画
+                    gridCtx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
+                    gridCtx.lineWidth = 1;
+
+                    // 縦線
+                    for (let col = 0; col <= GRID_COLS; col++) {
+                        const x = col * cellWidth;
+                        gridCtx.beginPath();
+                        gridCtx.moveTo(x, 0);
+                        gridCtx.lineTo(x, canvas.height);
+                        gridCtx.stroke();
+                    }
+
+                    // 横線
+                    for (let row = 0; row <= GRID_ROWS; row++) {
+                        const y = row * cellHeight;
+                        gridCtx.beginPath();
+                        gridCtx.moveTo(0, y);
+                        gridCtx.lineTo(canvas.width, y);
+                        gridCtx.stroke();
+                    }
+
+                    // 結果を表示
+                    document.getElementById('percentage').textContent = percentage + '%';
+                    document.getElementById('totalPixels').textContent = totalPixels.toLocaleString();
+                    document.getElementById('blackPixels').textContent = blackCount.toLocaleString();
+                    document.getElementById('imageSize').textContent = `${canvas.width} × ${canvas.height}`;
+
+                    document.getElementById('gridTitle').textContent = `${GRID_ROWS}×${GRID_COLS}マス目解析`;
+                    document.getElementById('totalCells').textContent = `${GRID_ROWS * GRID_COLS} (${GRID_ROWS}行 × ${GRID_COLS}列)`;
+                    document.getElementById('gridCount').textContent = `${blackCellCount} マス`;
+                    document.getElementById('blackCellCount').textContent = blackCellCount;
+                    document.getElementById('cellSize').textContent =
+                        `約 ${cellWidth.toFixed(1)} × ${cellHeight.toFixed(1)} ピクセル`;
+
+                    // ダウンロードボタンを表示
+                    document.getElementById('downloadBtn').style.display = 'inline-block';
+
+                    result.classList.add('show');
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+    </script>
+</body>
+</html>
